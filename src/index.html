@@ -1,27 +1,54 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Water Level Monitor</title>
-<link rel="stylesheet" href="./styles/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Water Level Monitor</title>
+  <link rel="stylesheet" href="./styles/style.css">
 </head>
-
 <body>
-<div class="wrap">
+  <!-- Main page wrapper so the dashboard stays centered and constrained -->
+  <div class="dashboardShell">
+    <!-- Top header: title on the left, connection badge on the right -->
+    <header class="monitorHeader">
+      <div>
+        <h1>Water Level Monitor</h1>
+        <p>ESP32 • Live Sensor</p>
+      </div>
 
-<header class="header">
-  <div>
-    <h1>Water Level Monitor</h1>
-    <p>ESP32 • Live Sensor</p>
+      <div class="connectionStatus">
+        <span class="statusDot"></span>
+        Connected
+      </div>
+    </header>
+
+    <!-- Live reading card -->
+    <main class="monitorCard">
+      <!-- Main value + quick status details -->
+      <div class="readingRow">
+        <div class="levelDisplay">
+          <span id="level">--</span><span class="unit">%</span>
+        </div>
+
+        <div class="sensorDetails">
+          <div class="statusChip" id="statusChip">--</div>
+          <div class="metaText">Distance: <span id="distance">--</span> cm</div>
+        </div>
+      </div>
+
+      <!-- Fill progress bar -->
+      <div class="levelBar">
+        <div class="levelBarFill" id="barFill" style="width:0%"></div>
+      </div>
+
+      <!-- Actions + timestamp -->
+      <div class="actionsRow">
+        <button class="refreshButton" id="refreshBtn" type="button">Refresh</button>
+        <div class="metaText">Last updated: <span id="updated">--:--:--</span></div>
+      </div>
+    </main>
   </div>
 
-  <div class="status">
-    <span class="dot"></span>
-    Connected
-  </div>
-</header>
-
-</div>
+  <script type="module" src="./js/app.js"></script>
 </body>
 </html>
