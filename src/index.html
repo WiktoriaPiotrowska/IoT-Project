@@ -38,7 +38,7 @@
 
       <!-- Fill progress bar -->
       <div class="levelBar">
-        <div class="levelBarFill" id="barFill" style="width:0%"></div>
+        <div class="levelBarFill" id="barFill" style="width:42%"></div>
       </div>
 
       <!-- Actions + timestamp -->
@@ -47,6 +47,20 @@
         <div class="metaText">Last updated: <span id="updated">--:--:--</span></div>
       </div>
     </main>
+
+    <!-- Simple recent readings block to track short-term changes -->
+    <section class="monitorCard historyCard">
+      <div class="sectionHeader">
+        <h2>Recent Readings</h2>
+        <span class="metaText">Latest 5</span>
+      </div>
+      <ul class="historyList" id="historyList">
+        <li class="historyItem">
+          <span>Waiting for data...</span>
+          <span class="metaText">--</span>
+        </li>
+      </ul>
+    </section>
   </div>
 
   <script type="module" src="./js/app.js"></script>
