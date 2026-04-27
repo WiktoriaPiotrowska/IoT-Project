@@ -1,8 +1,8 @@
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <WiFi.h>
-#include <WebServer.h>
+#include <Wire.h> //The ESP32 communicates with the I2C devics such as OLED display
+#include <Adafruit_GFX.h> //Graphic Lib for OLED display
+#include <Adafruit_SSD1306.h> //For my OLED display size
+#include <WiFi.h> //connects with hotspot
+#include <WebServer.h> //web server for the dashboad
 
 #define TRIG_PIN 5
 #define ECHO_PIN 18
@@ -17,55 +17,82 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 WebServer server(80);
 
 //Main dashboard page stored on the ESP32
-const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
+const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html> 
 <html lang="en">
 <head>
+  <!-- Basic webpage setup.
+       UTF-8 allows normal characters to display correctly.
+       The viewport tag makes the dashboard fit properly on a phone screen. -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+
+  <!-- Browser tab title. -->
   <title>Water Level Monitor</title>
+
+  <!-- The CSS file is served by the ESP32 using the /styles/style.css route. -->
   <link rel="stylesheet" href="/styles/style.css">
 </head>
 <body>
-  <!-- Main dashboard wrapper -->
+  <!-- Main dashboard wrapper.
+       Everything visible on the webpage is inside this container. -->
   <div class="dashboard">
-    <!-- Page heading and connection status -->
+
+    <!-- Header section.
+         Shows the project name and the live connection status.
+         The JavaScript updates the badge depending on whether /data responds. -->
     <header class="header">
       <div>
         <h1>Water Level Monitor</h1>
         <p>ESP32 • Live Sensor</p>
       </div>
 
+      <!-- Connection badge.
+           The dot and label change between Connected and Offline. -->
       <div class="connectionBadge">
         <span class="statusDot" id="statusDot"></span>
         <span id="connectionLabel">Connecting...</span>
       </div>
-    </header>
+    </header> 
 
-    <!-- Live reading card -->
+    <!-- Live reading card.
+         This is the main display area for the current water level. -->
     <main class="card">
-      <!-- Main value and sensor details -->
+
+      <!-- Main reading row.
+           The large percentage, status chip and measured distance are displayed here. -->
       <div class="readingRow">
+
+        <!-- Large water level percentage.
+             JavaScript updates the span with id="level" using the JSON data from /data. -->
         <div class="levelDisplay">
           <span id="level">--</span><span class="unit">%</span>
         </div>
 
+        <!-- Sensor details section.
+             The status chip shows Low Level, Normal or High Level.
+             The distance value shows the raw ultrasonic distance in centimetres. -->
         <div class="sensorDetails">
           <div class="statusChip" id="statusChip">--</div>
           <div class="metaText">Distance: <span id="distance">--</span> cm</div>
         </div>
       </div>
 
-      <!-- Visual water level bar -->
+      <!-- Visual water level bar.
+           The width of barFill is changed by JavaScript to match the live percentage. -->
       <div class="levelBar">
         <div class="levelBarFill" id="barFill" style="width:42%"></div>
-      </div>
+      </div> 
 
-      <!-- Refresh button and update time -->
+      <!-- Refresh button and last updated time.
+           The page refreshes automatically, but this button lets the user request a reading manually. -->
       <div class="actionsRow">
         <button class="btn" id="refreshBtn" type="button">Refresh</button>
         <div class="metaText">Last updated: <span id="updated">--:--:--</span></div>
       </div>
-
+       
+      <!-- Data source controls.
+           By default this points to the ESP32 /data route.
+           It is useful for testing because the user can change the endpoint if needed. -->
       <div class="sourceRow">
         <label class="controlLabel" for="endpointInput">Data Source</label>
         <input
@@ -80,25 +107,37 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
         <div class="metaText">Active: <span id="activeEndpoint">--</span></div>
       </div>
     </main>
-
-    <!-- Alert settings and alert status -->
+      
+    <!-- Alert section.
+         The user can choose their own low and high water level limits.
+         When a limit is reached, the banner changes and the event is stored in the alert history. -->
     <section class="card alertsCard">
       <div class="sectionHeader">
         <h2>Alerts</h2>
         <span class="metaText" id="alertStateText">No active alert</span>
       </div>
 
+      <!-- Alert banner.
+           JavaScript changes this between normal, low alert and high alert. -->
       <div class="alertBanner alertNormal" id="alertBanner">System Normal</div>
-
+        
+      <!-- Alert controls.
+           Default low threshold is 25%.
+           Default high threshold is 85%.
+           The values are saved in localStorage so they stay after refreshing the page. -->
       <div class="alertControls">
         <label class="controlLabel" for="lowThresholdInput">Low %</label>
         <input id="lowThresholdInput" class="thresholdInput" type="number" min="0" max="100" step="1" value="25">
+
         <label class="controlLabel" for="highThresholdInput">High %</label>
         <input id="highThresholdInput" class="thresholdInput" type="number" min="0" max="100" step="1" value="85">
+
         <button class="btn" id="applyAlertBtn" type="button">Apply</button>
         <button class="btn" id="notifyBtn" type="button">Enable Notifications</button>
       </div>
-
+       
+      <!-- Alert history.
+           Stores the latest alert messages so the user can see when a warning happened. -->
       <ul class="historyList" id="alertHistoryList">
         <li class="historyItem">
           <span>No alerts yet.</span>
@@ -106,13 +145,16 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
         </li>
       </ul>
     </section>
-
-    <!-- Small list of recent readings -->
+    
+    <!-- Recent readings section.
+         Stores the latest 5 readings at 10 minute intervals.
+         This gives a simple history without filling the page with readings every second. -->
     <section class="card historyCard">
       <div class="sectionHeader">
         <h2>Recent Readings</h2>
         <span class="metaText">Latest 5 (10 min interval)</span>
       </div>
+
       <ul class="historyList" id="historyList">
         <li class="historyItem">
           <span>Waiting for data...</span>
@@ -123,7 +165,8 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
   </div>
 
   <script>
-    // Dashboard elements
+    //These variables connect the JavaScript to the HTML elements on the page
+    //The IDs are used so the dashboard can update live without reloading the browser
     const levelEl = document.getElementById("level");
     const distanceEl = document.getElementById("distance");
     const statusChipEl = document.getElementById("statusChip");
@@ -144,17 +187,25 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     const alertBannerEl = document.getElementById("alertBanner");
     const alertHistoryListEl = document.getElementById("alertHistoryList");
 
-    // Timing for live updates and the recent readings list
+    //Timing values for the webpage
+    //The live reading updates every second
+    //The recent readings section only saves one reading every 10 minutes
     const REFRESH_INTERVAL_MS = 1000;
     const HISTORY_INTERVAL_MS = 10 * 60 * 1000;
 
-    // The ESP32 serves /data from the same address as the page
+    //The default data source is the /data route on the same ESP32
+    //The dashboard loads from the ESP32 and then asks /data for live JSON readings
     let selectedEndpoint = `${window.location.origin}/data`;
+
+    // Used to stop older slower requests from overwriting newer readings.
     let latestRequestId = 0;
+
+    //Stores recent readings shown in the Recent Readings section
     const recentReadings = [];
     let lastHistorySampleAt = 0;
 
-    // Alert settings are saved in the browser so the values stay after refresh
+    //Alert settings are saved in the browser
+    //This means the chosen low and high limits stay saved after refreshing the page
     const ALERT_LOW_STORAGE_KEY = "water-monitor-alert-low";
     const ALERT_HIGH_STORAGE_KEY = "water-monitor-alert-high";
     const alertHistory = [];
@@ -165,7 +216,8 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     let lastRenderedLevel = null;
 
     function fixEndpoint(value) {
-      // Allows the user to type either a full URL or just an IP address/path
+      //Cleans up the data source entered by the user
+      //The user can type a full URL, an IP address, or just /data
       const trimmed = String(value ?? "").trim();
       if (!trimmed) return null;
       if (/^https?:\/\//i.test(trimmed)) return trimmed;
@@ -174,15 +226,19 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function getWaterState(level) {
-      // These labels are just for the dashboard display
+      //Converts the water percentage into a simple dashboard status
+      //This controls the status chip beside the reading
       if (level < 30) return { label: "Low Level", className: "low" };
       if (level > 80) return { label: "High Level", className: "high" };
       return { label: "Normal", className: "normal" };
     }
 
     function setConnectionState(state) {
-      // Updates the small dot and text at the top of the page
+      //Updates the connection badge at the top of the page
+      //If /data responds, the dashboard shows Connected
+      //If /data fails, the dashboard shows Offline
       statusDotEl.classList.remove("online", "offline");
+
       if (state === "online") {
         statusDotEl.classList.add("online");
         connectionLabelEl.textContent = "Connected";
@@ -193,26 +249,29 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function updateEndpointText() {
-      // Keeps the text box and active endpoint label matching
+      //Keeps the data source input and the active endpoint label matching
       endpointInputEl.value = selectedEndpoint;
       activeEndpointEl.textContent = selectedEndpoint;
     }
 
     function clampInt(value, min, max, fallback) {
-      // Turns a value into a number and keeps it in range
+      //Converts a value into an integer and keeps it inside a safe range
+      //This prevents invalid percentages such as -10 or 200
       const parsed = Number.parseInt(String(value ?? ""), 10);
       if (!Number.isFinite(parsed)) return fallback;
       return Math.min(max, Math.max(min, parsed));
     }
 
     function getThresholds() {
-      // Reads saved alert limits, or uses the values in the input boxes
+      //Reads saved alert limits from localStorage
+      //If no saved values exist, the default input values are used
       const lowDefault = clampInt(lowThresholdInputEl.value, 0, 100, 25);
       const highDefault = clampInt(highThresholdInputEl.value, 0, 100, 85);
 
       try {
         const savedLow = window.localStorage.getItem(ALERT_LOW_STORAGE_KEY);
         const savedHigh = window.localStorage.getItem(ALERT_HIGH_STORAGE_KEY);
+
         return {
           low: clampInt(savedLow ?? lowDefault, 0, 100, 25),
           high: clampInt(savedHigh ?? highDefault, 0, 100, 85),
@@ -223,7 +282,8 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function saveThresholds(low, high) {
-      // Makes sure low is always below high
+      //Saves the alert limits and prevents invalid settings
+      //The low threshold must always be lower than the high threshold
       let fixedLow = clampInt(low, 0, 100, 25);
       let fixedHigh = clampInt(high, 0, 100, 85);
 
@@ -240,29 +300,35 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
         window.localStorage.setItem(ALERT_LOW_STORAGE_KEY, String(fixedLow));
         window.localStorage.setItem(ALERT_HIGH_STORAGE_KEY, String(fixedHigh));
       } catch (_error) {
-        // Nothing serious if the browser blocks local storage
+        //If the browser blocks localStorage, the dashboard still works
+        //The alert values just will not be saved after refresh
       }
 
       lowThresholdInputEl.value = String(fixedLow);
       highThresholdInputEl.value = String(fixedHigh);
+
       return { low: fixedLow, high: fixedHigh };
     }
 
     function isLocalPage(hostname) {
-      // Browser notifications work more easily on localhost or secure pages
+      //Checks if the page is running on a local address
+      //This matters because browser notifications are restricted on normal HTTP pages
       return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
     }
 
     function notificationsAvailable() {
-      // Checks if proper browser notifications can be used
+      //Checks whether proper browser notifications can be used
+      //Notifications normally require HTTPS, localhost, or a secure browser context
       if (typeof window.Notification === "undefined") return false;
       if (window.isSecureContext) return true;
       return isLocalPage(window.location.hostname);
     }
 
     function getAudioContext() {
-      // Used for a simple beep if browser notifications are not available
+      // Creates an audio context for the fallback beep alert.
+      // This is used if browser notifications are not available.
       if (audioContext) return audioContext;
+
       const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
       if (!AudioContextImpl) return null;
 
@@ -275,15 +341,18 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function playBeep() {
-      // Short beep for alert mode
+      //Plays a short beep using the browser WebAudio API
+      //This acts as a fallback alert method if notifications cannot be used
       const ctx = getAudioContext();
       if (!ctx) return;
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
       osc.type = "sine";
       osc.frequency.value = 880;
       gain.gain.value = 0.0001;
+
       osc.connect(gain);
       gain.connect(ctx.destination);
 
@@ -291,19 +360,22 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
       gain.gain.setValueAtTime(0.0001, now);
       gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
       osc.start(now);
       osc.stop(now + 0.25);
     }
 
     function getAlertState(level, thresholds) {
-      // Works out if the reading is low, high or normal
+      //Compares the current water level with the saved alert limits
+      //It returns low, high or normal
       if (level <= thresholds.low) return "low";
       if (level >= thresholds.high) return "high";
       return "normal";
     }
 
     function showAlertState(state) {
-      // Changes the alert banner on the page
+      //Updates the alert banner on the dashboard
+      //The class changes the colour and the text explains the current state
       alertBannerEl.classList.remove("alertNormal", "alertLow", "alertHigh");
 
       if (state === "low") {
@@ -326,7 +398,8 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function showAlertHistory() {
-      // Prints the latest alert messages under the alert box
+      //Displays the latest alert messages under the alert banner
+      //If no alerts have happened, it shows a default message
       if (alertHistory.length === 0) {
         alertHistoryListEl.innerHTML = `
           <li class="historyItem">
@@ -350,7 +423,8 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function addAlertHistory(entry) {
-      // Keeps only the latest five alert messages
+      //Adds a new alert message to the top of the history list
+      //Only the latest five alert messages are kept
       if (entry) {
         alertHistory.unshift(entry);
       }
@@ -363,32 +437,38 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function sendAlert(message) {
-      // Sends a notification, or falls back to vibration/beep
+      //Sends an alert to the user
+      //It tries browser notifications first
+      //If that is not possible, it falls back to vibration and a beep
       if (!notificationsEnabled) return;
 
       if (notificationMode === "system" && notificationsAvailable()) {
         if (window.Notification.permission !== "granted") return;
+
         try {
           new window.Notification("Water Level Monitor", { body: message });
           return;
         } catch (_error) {
-          // If notifications fail, continue to the fallback below
+          //If notifications fail, the fallback alert methods below are used
         }
       }
 
       try {
         window.navigator?.vibrate?.([200, 120, 200]);
       } catch (_error) {
-        // Some browsers will not allow vibration
+        //Some browsers do not allow vibration
       }
 
       playBeep();
     }
 
     function checkAlerts(level, timestampMs) {
-      // Checks if the water level crossed the alert limits
+      //Checks whether the water level has crossed the alert limits
+      //It only adds a new alert when the state changes
+      //This stops the same warning being added every second
       const thresholds = getThresholds();
       const newState = getAlertState(level, thresholds);
+
       showAlertState(newState);
 
       if (newState === currentAlertState) return;
@@ -409,7 +489,8 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     function showReading(payload) {
-      // Cleans the API values before putting them on the page
+      //Takes the JSON response from the ESP32 and updates the dashboard
+      //The values are cleaned first so impossible values are not displayed
       const rawLevel = Number(payload?.level);
       const level = Number.isFinite(rawLevel) ? Math.min(100, Math.max(0, Math.round(rawLevel))) : 0;
 
@@ -417,25 +498,33 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
       const distance = Number.isFinite(rawDistance) ? Math.max(0, rawDistance) : 0;
 
       const state = getWaterState(level);
+
+      //Keeps the progress bar slightly visible even when the level is 0%
       const visibleFill = level === 0 ? 4 : level;
+
       lastRenderedLevel = level;
 
+      //Updates the main percentage, the distance text and the progress bar
       levelEl.textContent = String(level);
       distanceEl.textContent = distance.toFixed(2);
       barFillEl.style.width = `${visibleFill}%`;
 
+      //Updates the coloured status chip
       statusChipEl.textContent = state.label;
       statusChipEl.classList.remove("low", "normal", "high");
       statusChipEl.classList.add(state.className);
 
+      //Updates the time, recent readings and alert system
       const nowMs = Date.now();
       updatedEl.textContent = new Date(nowMs).toLocaleTimeString();
+
       updateHistory(level, nowMs);
       checkAlerts(level, nowMs);
     }
 
     function updateHistory(level, timestampMs) {
-      // The main value updates often, but history only saves every ten minutes
+      //The main dashboard updates every second
+      //The recent readings list only saves a reading every 10 minutes
       const shouldSave =
         recentReadings.length === 0 ||
         timestampMs - lastHistorySampleAt >= HISTORY_INTERVAL_MS;
@@ -443,6 +532,7 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
       if (!shouldSave) return;
 
       lastHistorySampleAt = timestampMs;
+
       const time = new Date(timestampMs).toLocaleTimeString();
       recentReadings.unshift({ level, time });
 
@@ -463,22 +553,32 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     }
 
     async function refresh() {
-      // Gets the newest reading from the ESP32 /data route
+      //Main live update function, It requests the newest JSON reading from the ESP32 /data route and then updates the dashboard with that data
       const requestId = ++latestRequestId;
 
       try {
         const url = new URL(selectedEndpoint, window.location.href);
+
+        //Adds a timestamp to the request UR
+        //This helps stop the browser from reusing an old cached response
         url.searchParams.set("_t", String(Date.now()));
 
+        //fetch() asks the ESP32 for the latest data
+        //cache: "no-store" tells the browser not to use saved data
         const res = await fetch(url.toString(), { cache: "no-store" });
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
+
+        //If an older request finishes after a newer request, ignore it
+        //This stops old readings from overwriting newer readings
         if (requestId !== latestRequestId) return;
 
         showReading(data);
         setConnectionState("online");
       } catch (_error) {
+        //If the ESP32 does not respond, the dashboard changes to Offline, This makes it clear that the problem is connection related
         if (requestId !== latestRequestId) return;
 
         setConnectionState("offline");
@@ -487,18 +587,21 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
       }
     }
 
+    //Manual refresh button, This lets the user request a new reading immediately
     refreshBtn.addEventListener("click", () => refresh());
 
     applyEndpointBtnEl.addEventListener("click", () => {
-      // Allows a different data source to be tested if needed
+      //Allows a different data source to be tested if needed,This is useful for debugging if the ESP32 IP address changes
       const fixedEndpoint = fixEndpoint(endpointInputEl.value);
+
       selectedEndpoint = fixedEndpoint ?? `${window.location.origin}/data`;
+
       updateEndpointText();
       refresh();
     });
 
     endpointInputEl.addEventListener("keydown", (event) => {
-      // Pressing enter does the same thing as the Set Source button
+      //Pressing Enter in the input box does the same thing as clicking Set Source
       if (event.key === "Enter") {
         event.preventDefault();
         applyEndpointBtnEl.click();
@@ -506,9 +609,11 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     });
 
     applyAlertBtnEl.addEventListener("click", () => {
-      // Saves the alert settings and checks the current reading again
+      //Saves the alert settings and checks the current reading again
+      //This means the alert banner updates straight away after changing the limits
       const low = clampInt(lowThresholdInputEl.value, 0, 100, 25);
       const high = clampInt(highThresholdInputEl.value, 0, 100, 85);
+
       saveThresholds(low, high);
 
       if (typeof lastRenderedLevel === "number") {
@@ -519,7 +624,9 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
     });
 
     notifyBtnEl.addEventListener("click", async () => {
-      // Enables browser notifications if possible, otherwise uses sound/vibration
+      //Enables alert notifications.
+      //It uses browser notifications if possible.
+      //If not, it uses sound and vibration as a fallback.
       notificationsEnabled = true;
       getAudioContext();
 
@@ -537,7 +644,7 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
             return;
           }
         } catch (_error) {
-          // Fallback is used below
+          //If notification permission fails, the fallback alert mode is used below
         }
       }
 
@@ -546,12 +653,17 @@ const char INDEX_HTML[] PROGMEM = R"__INDEXHTML__(<!doctype html>
       addAlertHistory({ message: "Alerts enabled (sound/vibration)", time: new Date().toLocaleTimeString() });
     });
 
+    //Starts the dashboard when the page first loads
+    //It fills in the endpoint text, loads saved thresholds and shows the normal alert state
     updateEndpointText();
+
     const savedThresholds = getThresholds();
     saveThresholds(savedThresholds.low, savedThresholds.high);
+
     showAlertState("normal");
     addAlertHistory(null);
 
+    //First refresh runs as soon as the page open, setInterval repeats every second to keep the dashboard live
     refresh();
     setInterval(refresh, REFRESH_INTERVAL_MS);
   </script>
@@ -580,7 +692,7 @@ body {
   max-width: 900px;
 }
 
-/* Header card */
+/* Header card, uses flex so the title and connection badge sit on oppsite sides */
 .header {
   display: flex;
   justify-content: space-between;
@@ -609,7 +721,7 @@ p {
   opacity: .7;
 }
 
-/* Connection badge beside the title */
+/* Connection badge beside the title, dot changes colour based on if the ESP32 is online or offline */
 .connectionBadge {
   display: flex;
   align-items: center;
@@ -643,7 +755,7 @@ p {
   box-shadow: 0 0 0 6px rgba(245, 158, 11, .18);
 }
 
-/* Shared card style */
+/* Shared card style, used for the live reading, alerts and recent readings sections */
 .card {
   margin-top: 14px;
   padding: 18px 22px;
@@ -653,7 +765,7 @@ p {
   backdrop-filter: blur(12px);
 }
 
-/* Row with percentage and distance */
+/* Row with percentage and distance, wrap helps layout work on smaller screens*/
 .readingRow {
   display: flex;
   justify-content: space-between;
@@ -661,7 +773,7 @@ p {
   gap: 14px;
   flex-wrap: wrap;
 }
-
+/* Large % display*/
 .levelDisplay {
   font-size: 56px;
   font-weight: 750;
@@ -675,14 +787,14 @@ p {
   margin-left: 6px;
   font-weight: 650;
 }
-
+/* Distance and status chip area on dashboard*/
 .sensorDetails {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
 }
-
+/* status chip base style*/
 .statusChip {
   padding: 8px 12px;
   border-radius: 999px;
@@ -690,7 +802,7 @@ p {
   border: 1px solid rgba(255, 255, 255, .10);
   font-size: 12px;
 }
-
+/* status chip colour for high, low, normal*/
 .statusChip.low {
   background: rgba(239, 68, 68, .2);
   border-color: rgba(239, 68, 68, .4);
@@ -711,7 +823,7 @@ p {
   opacity: .7;
 }
 
-/* Water level progress bar */
+/* Water level progress bar, the inside fill width is changed by JavaScrpit based on the water level percentage */
 .levelBar {
   margin-top: 14px;
   height: 18px;
@@ -729,7 +841,7 @@ p {
   box-shadow: inset 0 0 12px rgba(255, 255, 255, .25);
 }
 
-/* Refresh and data source rows */
+/* Refresh and data source rows, these controls allow the user to manually change the data endpoint */
 .actionsRow {
   margin-top: 14px;
   display: flex;
@@ -761,7 +873,7 @@ p {
 .endpointInput::placeholder {
   color: rgba(255, 255, 255, .55);
 }
-
+/* Button style used across the dashboard */
 .btn {
   appearance: none;
   border: 0;
@@ -790,7 +902,7 @@ p {
 .alertsCard {
   margin-top: 14px;
 }
-
+/* Alert banner, JavaScript changes the class depending on whether the system is normal*/
 .alertBanner {
   margin-top: 12px;
   padding: 10px 12px;
@@ -814,7 +926,7 @@ p {
   background: rgba(245, 158, 11, .2);
   border-color: rgba(245, 158, 11, .45);
 }
-
+ /* Alerts threshold input area */
 .alertControls {
   margin-top: 12px;
   display: flex;
@@ -843,7 +955,7 @@ p {
   align-items: center;
   gap: 10px;
 }
-
+/* style for alert history and recent reading */
 .historyList {
   margin: 12px 0 0;
   padding: 0;
@@ -870,12 +982,14 @@ const char* WIFI_SSID = "WiktoriasiPhone";
 const char* WIFI_PASSWORD = "Wiktoria06";
 
 //Timing values
+//millis() is used in the main loop instead of delays so the server can respond while sensor and OLED are updating
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
-const unsigned long SERIAL_LOG_INTERVAL_MS = 1000;
+const unsigned long SERIAL_LOG_INTERVAL_MS = 1000; //
 const unsigned long URL_PRINT_INTERVAL_MS = 5000;
 const unsigned long SENSOR_READ_INTERVAL_MS = 250;
 
 //Fallback WiFi network made by the ESP32 if the hotspot fails
+// ESP32 own network
 const char* FALLBACK_AP_SSID = "WaterLevelMonitor";
 const char* FALLBACK_AP_PASSWORD = "12345678";
 
@@ -884,18 +998,20 @@ float tankHeight = 16.0; //height of the tank in cm
 float minDistance = 7.0; //distance when the tank is full
 float maxDistance = minDistance + tankHeight; //distance when the tank is empty
 
-//Latest sensor values
+//Latest sensor values, these are shared by the OLED,buzzer,serial monitor and /data web route
 float latestDistance = 0.0;
 int latestLevel = 0;
 
 //Timing variables used inside loop()
-unsigned long lastSensorReadMs = 0;
-unsigned long lastSerialLogMs = 0;
-unsigned long lastUrlPrintMs = 0;
+//These allow actions to happen without blocking the web server
+unsigned long lastSensorReadMs = 0; //
+unsigned long lastSerialLogMs = 0; //
+unsigned long lastUrlPrintMs = 0; //
 
 //True when the ESP32 has made its own fallback WiFi network
 bool usingFallbackAp = false;
 
+//declared functions
 void readAndRenderSensor();
 bool connectToHotspot();
 void startFallbackAccessPoint();
@@ -903,14 +1019,14 @@ void printAccessUrls();
 
 void setCorsHeaders() {
   //Lets the webpage read /data without browser blocking issues
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-  server.sendHeader("Access-Control-Allow-Private-Network", "true");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); //
+  server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS"); //
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type"); //  
+  server.sendHeader("Access-Control-Allow-Private-Network", "true"); //
 }
 
 float readDistanceOnce() {
-  //Sends one pulse from the ultrasonic sensor
+  //Sends 1 microseconf trigger pulse to the HC-SR04, the sensor than waits for the echo to return from the water surface
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(5);
   digitalWrite(TRIG_PIN, HIGH);
@@ -918,21 +1034,21 @@ float readDistanceOnce() {
   digitalWrite(TRIG_PIN, LOW);
 
   //Reads the echo time and turns it into cm
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  float distance = duration * 0.0343 / 2;
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); //measure how long the ECHO pin stays high for
+  float distance = duration * 0.0343 / 2; //converts time in CM than divided by 2 because the sound travels to the water and back
 
   return distance;
 }
 
 float getDistance() {
-  //Takes five readings and uses the middle value to reduce random jumps
+  //Takes five readings and uses the middle value to reduce random jumps this gives a more stable reading
   float samples[5];
   int validCount = 0;
 
   for (int i = 0; i < 5; i++) {
     float distance = readDistanceOnce();
 
-    //Only keep readings that make sense for the sensor
+    //Only keep readings inside a sensible range for the sensor and rejects clearly wrong values
     if (distance >= 2.0 && distance <= 400.0) {
       samples[validCount++] = distance;
     }
@@ -962,25 +1078,29 @@ float getDistance() {
   return samples[validCount / 2];
 }
 
+
 int getWaterLevelPercent(float distance) {
-  //Bad readings keep the last good percentage
+  // if reading failed , keep the last good reading
   if (distance < 0) return latestLevel;
 
   //Smaller distance means the water is closer to the sensor
-  if (distance <= minDistance) return 100;
-  if (distance >= maxDistance) return 0;
+  if (distance <= minDistance) return 100; // full show 100
+  if (distance >= maxDistance) return 0; // empty show 0
 
   //Convert the distance into a percentage
   float level = 100 - ((distance - minDistance) / tankHeight) * 100;
 
-  if (level < 0) level = 0;
+//the results can never go lower than 0 or higher than 100
+  if (level < 0) level = 0; 
   if (level > 100) level = 100;
 
+//Rounds to the nearest whole number
   return (int)(level + 0.5f);
 }
 
 void handleRoot() {
   //Sends the dashboard page
+  //Root handles the. main webpage
   setCorsHeaders();
   server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
 }
@@ -991,29 +1111,32 @@ void handleStyleCss() {
 }
 
 void handleFavicon() {
-  //Stops the browser repeatedly asking for an icon
+  //browser asks for an icon, sending an 204 response, stops from cluterring the serial monitor with icons
   server.send(204, "image/x-icon", "");
 }
 
 void handleOptions() {
-  //Handles browser preflight requests
+  //Handles browser requests
   setCorsHeaders();
   server.send(204, "text/plain", "");
 }
 
 void handleData() {
-  //Take a new reading before sending data to the webpage
+  //Take a new reading before sending data to the webpage, main API route. The JavaScript dashboard calls for /data everysecond.
+  //This function takes a new reading and builts a JSON response and sends it back to the browser
   readAndRenderSensor();
 
-  String payload = "{";
-  payload += "\"distance\":";
-  payload += String(latestDistance, 2);
-  payload += ",\"level\":";
-  payload += String(latestLevel);
-  payload += "}";
+//Builds the JSON response manually
+  String payload = "{"; //
+  payload += "\"distance\":"; //
+  payload += String(latestDistance, 2); //
+  payload += ",\"level\":"; //
+  payload += String(latestLevel); //
+  payload += "}"; //
 
-  setCorsHeaders();
-  server.send(200, "application/json", payload);
+  setCorsHeaders(); //sends JSON back to the webpage
+  server.send(200, "application/json", payload); //The brower reads the information and updates the % distance, progress bar
+  //status chip, alerts and recent readings
 }
 
 void readAndRenderSensor() {
@@ -1025,7 +1148,7 @@ void readAndRenderSensor() {
     latestLevel = getWaterLevelPercent(latestDistance);
   }
 
-  unsigned long nowMs = millis();
+  unsigned long nowMs = millis(); //
 
   //Print readings per second on the serial monitor
   if (nowMs - lastSerialLogMs >= SERIAL_LOG_INTERVAL_MS) {
@@ -1066,13 +1189,14 @@ void readAndRenderSensor() {
 }
 
 bool connectToHotspot() {
-  //Try to connect to the phone hotspot first
+  //Try to connect to the phone hotspot first and puts ESP32 in station mode
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   Serial.print("Connecting to hotspot");
   unsigned long startedAt = millis();
 
+//tries to connect until connection or timeout
   while (WiFi.status() != WL_CONNECTED && millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
     delay(500);
     Serial.print(".");
@@ -1083,6 +1207,7 @@ bool connectToHotspot() {
   if (WiFi.status() == WL_CONNECTED) {
     IPAddress ip = WiFi.localIP();
 
+      //Once connected the ESP32 recevies an IP address from Hotspot
     Serial.print("Connected to hotspot. ESP32 IP: ");
     Serial.println(ip);
 
@@ -1097,13 +1222,14 @@ bool connectToHotspot() {
     return true;
   }
 
+//If connection failed the fallbacl access will be used
   Serial.println("Hotspot connection failed.");
   Serial.println("ESP32 is 2.4GHz only. On iPhone hotspot.");
   return false;
 }
 
 void startFallbackAccessPoint() {
-  //If the phone hotspot fails, the ESP32 makes its own WiFi network
+  //If the phone hotspot fails, the ESP32 makes its own WiFi network, the user can directly connect
   WiFi.mode(WIFI_AP);
   WiFi.softAP(FALLBACK_AP_SSID, FALLBACK_AP_PASSWORD);
   usingFallbackAp = true;
@@ -1142,6 +1268,7 @@ void printAccessUrls() {
 }
 
 void setup() {
+  //starts the serial monitor for debugging and setup messages
   Serial.begin(115200);
   delay(1200);
 
@@ -1153,7 +1280,7 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
 
   //Start the OLED display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { //start of OLED display at I2C address 0x3C
     Serial.println("OLED not found");
     for (;;);
   }
@@ -1167,30 +1294,30 @@ void setup() {
     startFallbackAccessPoint();
   }
 
-  lastUrlPrintMs = millis();
+  lastUrlPrintMs = millis(); //prints the URL
   printAccessUrls();
 
   //Web server routes
-  server.on("/", handleRoot);
-  server.on("/", HTTP_OPTIONS, handleOptions);
-  server.on("/styles/style.css", handleStyleCss);
-  server.on("/favicon.ico", handleFavicon);
-  server.on("/data", handleData);
-  server.on("/data", HTTP_OPTIONS, handleOptions);
-  server.begin();
+  server.on("/", handleRoot); //register all web server routes
+  server.on("/", HTTP_OPTIONS, handleOptions); //sends main basboard page
+  server.on("/styles/style.css", handleStyleCss); // sends styling
+  server.on("/favicon.ico", handleFavicon); //avoids favicon erros
+  server.on("/data", handleData); // sends live data from livr sensor readings as JSON
+  server.on("/data", HTTP_OPTIONS, handleOptions); //options route for brower compatibility
+  server.begin(); //starts webserver
 
   //First reading at startup
-  readAndRenderSensor();
+  readAndRenderSensor(); //takes 1st reading so the OLED and webpage can have data
   lastSensorReadMs = millis();
 }
 
 void loop() {
-  //Keeps the web server running
+  //Keeps the web server running, without this the /data would not update
   server.handleClient();
 
-  unsigned long nowMs = millis();
+  unsigned long nowMs = millis(); //
 
-  //Print the dashboard URL every few seconds
+  //Print the dashboard URL every few seconds, millis() is used so the ESP32 can handle requests while timing checks arw happeneing
   if (nowMs - lastUrlPrintMs >= URL_PRINT_INTERVAL_MS) {
     lastUrlPrintMs = nowMs;
     printAccessUrls();
